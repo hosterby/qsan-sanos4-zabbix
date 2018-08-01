@@ -1,0 +1,15 @@
+#!/bin/bash
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+export PYENV_VIRTUALENV_DISABLE_PROMPT=1
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"
+
+# Replace with your pyenv
+pyenv activate yourenv
+
+# Getting current directory from which script was called
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+cd $DIR
+
+python qsan.py "$@"
