@@ -182,7 +182,7 @@ class QSAN():
     def storage_stats(self):
         """
         Getting stats from dashboard
-        Returns: {'iops': 10764, 'read': 282640625, 'write': 1255703125}
+        Returns: {'iops': '10764', 'read': '282640625', 'write': '1255703125'}
         """
         stats = {
             'iops': None,
@@ -206,16 +206,16 @@ class QSAN():
         stats['read'] = stats.pop('tx')
         stats['write'] = stats.pop('rx')
 
-        stats['iops'] = int(stats['iops'])
+        stats['iops'] = stats['iops']
         # Converting to Bps
-        stats['read'] = int(float(stats['read']) * 1048576)
-        stats['write'] = int(float(stats['write']) * 1048576)
+        stats['read'] = str(int(float(stats['read']) * 1048576))
+        stats['write'] = str(int(float(stats['write']) * 1048576))
 
         return stats
 
     def _get_VD_name_by_id(self, id):
         """
-        Forms name of VD (str) by givend VD id. No spaces allowed
+        Forms name of VD by givend VD id. No spaces allowed
         Returns: qsan-ssd3800-2_RAID10_10.48TB
         """
         raid = self._VDs.get(id)['raid'].replace(' ', '')
@@ -228,8 +228,8 @@ class QSAN():
         """
         Getting Volumes information from Storage
         Fills self._VDs with:
-        {id: {'name': '', 'capacity': '', 'raid': ''},
-         id: {'name': '', 'capacity': '', 'raid': ''}, ... }
+        {'id': {'name': '', 'capacity': '', 'raid': '', ... },
+         'id': {'name': '', 'capacity': '', 'raid': '', ... }, ... }
         """
         page = 1
         VDs = {}
@@ -248,13 +248,17 @@ class QSAN():
             # Iteration over VDs
             for udv in self._soup.response.find_all('udv'):
                 if udv:
-                    vd = {
-                        int(udv.find('id').text): {
-                            'name': udv.find('name').text,
-                            'capacity': udv.find('capacity').text,
-                            'raid': udv.find('raid').text
-                        }
-                    }
+                    attrs = {}
+                    for attr in udv:
+
+                        # Something wrong with img param or bs4 can't parse it
+                        # .. <img/>no<vg_name>vgname</vg_name>
+                        if attr.name and attr.name not in 'img':
+                            attrs[attr.name] = attr.text
+
+                    attrs.pop('id', None)
+
+                    vd = {udv.find('id').text: attrs}
                     VDs.update(vd)
                 else:
                     page += 1
@@ -268,7 +272,7 @@ class QSAN():
         """
         Enables monitoring for specified VDs
         """
-        p = '&volume_arr=' + ','.join([str(vd) for vd in VDs])
+        p = '&volume_arr=' + ','.join([vd for vd in VDs])
 
         self._connection(self._url + self._url_path_select_stats_VD + p,
                          username=None,
@@ -279,7 +283,7 @@ class QSAN():
     def vd_stats(self):
         """
         Getting Volumes stats
-        Returns: {id: {'iops': 123, 'read': 123, 'write': 123}}
+        Returns: {'id': {'iops': 123, 'read': 123, 'write': 123}}
         """
         VDstats = {}
 
@@ -294,19 +298,19 @@ class QSAN():
         # Iteration over VDs
         for volume_stats in self._soup.response.find_all('volume_stats'):
             if volume_stats.vd_id:
-                vid = int(volume_stats.find('vd_id').text)
+                vid = volume_stats.find('vd_id').text
                 stats = {
                     vid: {
-                        'iops': int(volume_stats.find('iops_rate').text),
-                        'read': int(volume_stats.find('tx_rate').text),
-                        'write': int(volume_stats.find('rx_rate').text)
+                        'iops': volume_stats.find('iops_rate').text,
+                        'read': volume_stats.find('tx_rate').text,
+                        'write': volume_stats.find('rx_rate').text
                     }
                 }
                 volumes_monitoring_check.append(vid)
 
                 # Converting to Bps
-                stats[vid]['read'] = stats[vid]['read'] * 1024
-                stats[vid]['write'] = stats[vid]['write'] * 1024
+                stats[vid]['read'] = str(int(stats[vid]['read']) * 1024)
+                stats[vid]['write'] = str(int(stats[vid]['write']) * 1024)
 
                 VDstats.update(stats)
 
@@ -321,8 +325,8 @@ class QSAN():
         """
         Getting Disk information from Storage
         Fills self._DISKs with:
-        {'id': {'slot': '', 'size': '', 'vendor': '', 'model': ''},
-         'id': {'slot': '', 'size': '', 'vendor': '', 'model': ''}, ... }
+        {'id': {'slot': '', 'size': '', 'vendor': '', ... },
+         'id': {'slot': '', 'size': '', 'vendor': '', ... }, ... }
         """
 
         DISKs = {}
@@ -335,14 +339,13 @@ class QSAN():
         # Iteration over DISKs
         for hdd in self._soup.response.find_all('hdd'):
             if hdd:
-                d = {
-                    int(hdd.find('id').text): {
-                        'slot': int(hdd.find('slot').text),
-                        'size': hdd.find('size').text,
-                        'vendor': hdd.find('vendor').text,
-                        'model': hdd.find('model').text
-                    }
-                }
+                attrs = {}
+                for attr in hdd:
+                    attrs[attr.name] = attr.text
+
+                attrs.pop('id', None)
+
+                d = {hdd.find('id').text: attrs}
                 DISKs.update(d)
 
         self._DISKs = DISKs
@@ -356,7 +359,7 @@ class QSAN():
             slots.append(self._get_DISK_slot_by_id(disk))
         slots.sort()
 
-        p = '&slot_arr=' + ','.join([str(slot) for slot in slots])
+        p = '&slot_arr=' + ','.join([slot for slot in slots])
 
         self._connection(self._url + self._url_path_select_stats_DISK + p,
                          username=None,
@@ -367,7 +370,7 @@ class QSAN():
     def disk_stats(self):
         """
         Getting Disks stats
-        Returns: {id: {'latency': 123, 'thruput': 123}}
+        Returns: {id: {'latency': '123', 'thruput': '123'}}
         """
         DISKstats = {}
 
@@ -382,7 +385,7 @@ class QSAN():
         # Iteration over DISKs
         for disk_stats in self._soup.response.find_all('disk_monitor_stats'):
             if disk_stats.slot:
-                slot = int(disk_stats.find('slot').text)
+                slot = disk_stats.find('slot').text
                 id = self._get_DISK_id_by_slot(slot)
 
                 # Checking wether disk monitoring enabled or not
@@ -391,13 +394,13 @@ class QSAN():
 
                 stats = {
                     id: {
-                        'latency': int(disk_stats.find('latency').text),
-                        'thruput': int(disk_stats.find('thruput').text)
+                        'latency': disk_stats.find('latency').text,
+                        'thruput': disk_stats.find('thruput').text
                     }
                 }
 
                 # Converting to Bps
-                stats[id]['thruput'] = stats[id]['thruput'] * 1024
+                stats[id]['thruput'] = str(int(stats[id]['thruput']) * 1024)
 
                 DISKstats.update(stats)
 
@@ -409,7 +412,7 @@ class QSAN():
 
     def _get_DISK_id_by_slot(self, slot):
         """
-        Returns: disk int(id) by given int(slot)
+        Returns: disk id by given slot
         """
         for disk in self._DISKs:
             if self._DISKs.get(disk)['slot'] == slot:
@@ -418,16 +421,17 @@ class QSAN():
 
     def _get_DISK_slot_by_id(self, id):
         """
-        Returns: disk int(slot) by given int(id)
+        Returns: disk slot by given id
         """
 
         return self._DISKs.get(id)['slot']
 
     def _get_DISK_name_by_id(self, id):
         """
-        Forms name of DISK (str) by givend DISK id. No spaces allowed
+        Forms name of DISK by givend DISK id. No spaces allowed
         Returns: Slot_7_SEAGATE_ST3840FM0043
         """
+
         # F600Q (SANOS3?) doesn't have a model parameter
         if 'model' in self._DISKs.get(id):
             model = self._DISKs.get(id)['model']
@@ -465,7 +469,7 @@ class Zabbix():
         for param, value in self._qsan.storage_stats().items():
             print('\t'.join([zhost,
                              'qsan.sanos4.storage.' + param,
-                             str(value)]))
+                             value]))
 
     def print_vd_discovery(self):
         """
@@ -504,7 +508,7 @@ class Zabbix():
             for param, value in params.items():
                 print('\t'.join([zhost,
                                  'qsan.sanos4.volume.' + param + '[' + n + ']',
-                                 str(value)]))
+                                 value]))
 
     def print_disk_stats(self, zhost):
         """
@@ -520,7 +524,7 @@ class Zabbix():
             for param, value in params.items():
                 print('\t'.join([zhost,
                                  'qsan.sanos4.disk.' + param + '[' + n + ']',
-                                 str(value)]))
+                                 value]))
 
     def print_all_stats(self, zhost):
         """
