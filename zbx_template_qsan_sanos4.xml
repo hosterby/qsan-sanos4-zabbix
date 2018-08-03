@@ -165,7 +165,7 @@
                     <type>10</type>
                     <snmp_community/>
                     <snmp_oid/>
-                    <key>qsan.sh[&quot;--host&quot;, {HOST.CONN},&quot;--method&quot;,&quot;discovery:disk&quot;]</key>
+                    <key>qsan-sanos4-zabbix/qsan.py[&quot;--host&quot;, {HOST.CONN},&quot;--method&quot;,&quot;discovery:disk&quot;]</key>
                     <delay>1800</delay>
                     <status>0</status>
                     <allowed_hosts/>
@@ -336,7 +336,7 @@
                     <type>10</type>
                     <snmp_community/>
                     <snmp_oid/>
-                    <key>qsan.sh[&quot;--host&quot;, {HOST.CONN},&quot;--method&quot;,&quot;discovery:volume&quot;]</key>
+                    <key>qsan-sanos4-zabbix/qsan.py[&quot;--host&quot;, {HOST.CONN},&quot;--method&quot;,&quot;discovery:volume&quot;]</key>
                     <delay>1800</delay>
                     <status>0</status>
                     <allowed_hosts/>
