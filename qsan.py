@@ -146,8 +146,11 @@ class QSAN():
         """
         Checking if LOGOUT div present on a page
         """
-        # self._soup = self._bs4(r)
         res = self._soup.find('div', id='logout_btn')
+
+        # F600Q Support (SANOS3?)
+        if not res:
+            res = self._soup.find('img', title='Logout')
 
         if res:
             return True

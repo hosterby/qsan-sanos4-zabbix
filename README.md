@@ -21,6 +21,7 @@ Supports:
  * Python version 2.7+ (tested on 2.7, 3.5, 3.6)
  * Python pip modules: bs4 requests lxml
  * SANOS4 based QSAN Storage system (tested on XS3224, XS3226)
+ * SANOS3 based QSAN Storage system (tested on F600Q, no Overall and Volume stats)
 
 ## Installation
 
