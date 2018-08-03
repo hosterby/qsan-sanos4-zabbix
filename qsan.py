@@ -316,8 +316,7 @@ class QSAN():
 
         # Enabling monitoring of unmonitored VDs
         if set(volumes_monitoring_check) != set(volumes_IDs):
-            diff = set(volumes_IDs) - set(volumes_monitoring_check)
-            self._vd_stats_enable_VDs(list(diff))
+            self._vd_stats_enable_VDs(volumes_IDs)
 
         return VDstats
 
