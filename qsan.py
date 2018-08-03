@@ -222,6 +222,11 @@ class QSAN():
         name = self._VDs.get(id)['name'].replace(' ', '-')
         capacity = self._VDs.get(id)['capacity'].replace(' ', '')
 
+        # F600Q (SANOS3?) compatibility
+        if 'TB' not in capacity:
+            new_capacity = str(round(float(capacity) / 1024 / 1024, 1))
+            capacity = new_capacity + 'TB'
+
         return '_'.join([name, raid, capacity])
 
     def vd_discovery(self):
