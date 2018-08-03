@@ -195,6 +195,10 @@ class QSAN():
                          password=None,
                          data=None)
 
+        # SANOS3-based storages doesn't support storage stats
+        if not self._soup.response.controller:
+            return {}
+
         for s in stats:
             value = self._soup.response.find(s).text.replace(',', '')
             stats[s] = value
