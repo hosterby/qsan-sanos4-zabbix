@@ -424,10 +424,17 @@ class QSAN():
         Forms name of DISK (str) by givend DISK id. No spaces allowed
         Returns: Slot_7_SEAGATE_ST3840FM0043
         """
+        # F600Q (SANOS3?) doesn't have a model parameter
+        if 'model' in self._DISKs.get(id):
+            model = self._DISKs.get(id)['model']
+        else:
+            model = ''
+
         disk = (
-            'Slot_' + str(self._DISKs.get(id)['slot']) + '_' +
-            self._DISKs.get(id)['vendor'] + '_' +
-            self._DISKs.get(id)['model']
+            '_'.join(['Slot', self._DISKs.get(id)['slot'],
+                      self._DISKs.get(id)['vendor'],
+                      model, self._DISKs.get(id)['serial']
+                      ])
         )
 
         return disk
