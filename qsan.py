@@ -73,13 +73,20 @@ class QSAN():
         self._url_path_select_stats_DISK = ('/monitor_x.php' +
                                             '?op=disk_set_monitor&enc_idx=0')
         self._url_path_DISK_stats = '/monitor_x.php?cmd=monitor_disk'
+        self._url_path_FC = '/fc_x.php?ctrl_idx='
+        self._url_path_select_stats_FC = '/monitor_x.php?op=fcport_set_monitor'
+        self._url_path_select_stats_FC_SANOS3 = '/monitor_x.php'
+        self._url_path_FC_stats = '/monitor_x.php?cmd=monitor_fcport'
+        self._SANOS_VERSION = 4
         self._username = username
         self._password = password
         self._VDs = {}
         self._DISKs = {}
+        self._FCs = {}
         self.connect()
         self.vd_discovery()
         self.disk_discovery()
+        self.fc_discovery()
 
     def _bs4(self, r):
         """
@@ -255,10 +262,7 @@ class QSAN():
                 if udv:
                     attrs = {}
                     for attr in udv:
-
-                        # Something wrong with img param or bs4 can't parse it
-                        # .. <img/>no<vg_name>vgname</vg_name>
-                        if attr.name and attr.name not in 'img':
+                        if attr.name:
                             attrs[attr.name] = attr.text
 
                     attrs.pop('id', None)
@@ -345,7 +349,8 @@ class QSAN():
             if hdd:
                 attrs = {}
                 for attr in hdd:
-                    attrs[attr.name] = attr.text
+                    if attr.name:
+                        attrs[attr.name] = attr.text
 
                 attrs.pop('id', None)
 
@@ -450,6 +455,142 @@ class QSAN():
         )
 
         return disk
+
+    def fc_discovery(self):
+        """
+        Getting FC Ports information from Storage
+        Fills self._FCs with:
+        {'slot:port': {'name': '', 'status': '', 'data_rate': '', ... },
+         'slot:port': {'name': '', 'status': '', 'data_rate': '', ... }, ... }
+        """
+        FCs = {}
+
+        # Iteration over Controllers
+        for controller in ['0', '1']:
+            self._connection(self._url + self._url_path_FC + controller,
+                             username=None,
+                             password=None,
+                             data=None)
+
+            # If Storage has Fibre Channel ports
+            if self._soup.response:
+                # Iteration over ports
+                for fcp in self._soup.response.find_all('fc_port_value'):
+                    if fcp:
+                        attrs = {}
+                        for attr in fcp:
+                            if attr.name:
+                                attrs[attr.name] = attr.text
+
+                        # SANOS3 support
+                        if 'Port' in attrs.get('name'):
+                            port_id = str(int(attrs.get('name')[5:6]) - 1)
+                            self._SANOS_VERSION = 3
+                        else:
+                            port_id = str(int(attrs.get('name')[2:3]) - 1)
+
+                        p = {':'.join([controller, port_id]): attrs}
+
+                        FCs.update(p)
+
+        self._FCs = FCs
+
+    def _fc_stats_enable_FCs(self, FCs):
+        """
+        Enables monitoring for specified FC ports
+        """
+        print('enabling FCs...')
+        FCs.sort()
+        print(FCs)
+
+        if self._SANOS_VERSION == 4:
+            p = '&fibre_arr=' + ','.join([fc for fc in FCs])
+
+            self._connection(self._url + self._url_path_select_stats_FC + p,
+                             username=None,
+                             password=None,
+                             post=True,
+                             data=None)
+        else:
+            # SANOS 3
+            PARAMS = {
+                'ctrl_idx': None,
+                'is_enable': 1,
+                'op': 'fcport_set_monitor',
+                'port_idx': None
+                }
+            for slotport in FCs:
+                PARAMS['ctrl_idx'] = slotport[0:1]
+                PARAMS['port_idx'] = slotport[2:3]
+
+                self._connection(self._url +
+                                 self._url_path_select_stats_FC_SANOS3,
+                                 username=None,
+                                 password=None,
+                                 post=True,
+                                 data=PARAMS)
+
+    def fc_stats(self):
+        """
+        Getting FC ports stats
+        Returns: {'slot:port': {'tx': '123', 'rx': '123'}}
+        """
+        FCstats = {}
+
+        ports_IDs = [port for port in self._FCs]
+        ports_monitoring_check = []
+
+        self._connection(self._url + self._url_path_FC_stats,
+                         username=None,
+                         password=None,
+                         data=None)
+
+        # Iteration over Controllers
+        for ctrl_fcport in self._soup.response.find_all('ctrl_fcport_info'):
+            if ctrl_fcport:
+                controller = ctrl_fcport.find('ctrl_idx').text
+
+                # Iteration over FC Ports
+                for fcport_stats in ctrl_fcport.find_all('fcport_stats'):
+                    if fcport_stats:
+                        port = fcport_stats.find('port_idx').text
+                        id = controller + ':' + port
+
+                        # Checking wether port monitoring enabled or not
+                        if fcport_stats.find('is_enabled').text == 'Yes':
+                            ports_monitoring_check.append(id)
+
+                            if int(fcport_stats.find('num_rates').text) > 0:
+                                stats = {
+                                    id: {
+                                        'tx': fcport_stats.find('tx').text,
+                                        'rx': fcport_stats.find('rx').text
+                                    }
+                                }
+
+                                # Converting to Bps
+                                stats[id]['tx'] = str(int(stats[id]['tx']) *
+                                                      1024)
+                                stats[id]['rx'] = str(int(stats[id]['rx']) *
+                                                      1024)
+                            else:
+                                stats = {id: {'tx': '0', 'rx': '0'}}
+
+                        else:
+                            stats = {id: {'tx': '0', 'rx': '0'}}
+
+                        FCstats.update(stats)
+
+        # Enabling monitoring of unmonitored FCs
+        if set(ports_monitoring_check) != set(ports_IDs):
+            if self._SANOS_VERSION == 4:
+                self._fc_stats_enable_FCs(ports_IDs)
+            else:
+                # SANOS3
+                diff = set(ports_IDs) - set(ports_monitoring_check)
+                self._fc_stats_enable_FCs(list(diff))
+
+        return FCstats
 
 
 class Zabbix():
