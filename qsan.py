@@ -590,6 +590,19 @@ class QSAN():
 
         return FCstats
 
+    def _get_FC_port_name_by_id(self, port):
+        """
+        Forms name of FC port by givend port id. No spaces allowed
+        Returns: CTR2_FC4_(16Gb)
+        """
+        fcport = (
+            '_'.join([self._FCs.get(port)['ctr'],
+                      self._FCs.get(port)['name']
+                      ]).replace(' ', '_')
+        )
+
+        return fcport
+
 
 class Zabbix():
     """
@@ -632,6 +645,17 @@ class Zabbix():
         """
         for disk, params in self._qsan._DISKs.items():
             element = {'{#DISK}': self._qsan._get_DISK_name_by_id(disk)}
+            self._DATA['data'].append(element)
+
+        print(json.dumps(self._DATA, indent=2))
+
+    def print_fc_discovery(self):
+        """
+        Returns:
+        {"data": [{"{#FCPORT}": "portname"}, ... ]}
+        """
+        for port, params in self._qsan._FCs.items():
+            element = {'{#FCPORT}': self._qsan._get_FC_port_name_by_id(port)}
             self._DATA['data'].append(element)
 
         print(json.dumps(self._DATA, indent=2))
