@@ -715,6 +715,7 @@ class Zabbix():
         self.print_vd_stats(zhost)
         self.print_storage_stats(zhost)
         self.print_disk_stats(zhost)
+        self.print_fc_stats(zhost)
 
 
 def main():
@@ -731,6 +732,7 @@ def main():
     methods = {
         'discovery:volume': lambda: zabbix.print_vd_discovery(),
         'discovery:disk': lambda: zabbix.print_disk_discovery(),
+        'discovery:fc': lambda: zabbix.print_fc_discovery(),
         'stats:volume': lambda: zabbix.print_vd_stats(args.zhost),
         'stats:storage': lambda: zabbix.print_storage_stats(args.zhost),
         'stats:disk': lambda: zabbix.print_disk_stats(args.zhost),
