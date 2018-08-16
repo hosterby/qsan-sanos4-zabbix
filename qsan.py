@@ -499,9 +499,7 @@ class QSAN():
         """
         Enables monitoring for specified FC ports
         """
-        print('enabling FCs...')
         FCs.sort()
-        print(FCs)
 
         if self._SANOS_VERSION == 4:
             p = '&fibre_arr=' + ','.join([fc for fc in FCs])
