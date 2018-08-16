@@ -693,6 +693,22 @@ class Zabbix():
                                  'qsan.sanos4.disk.' + param + '[' + n + ']',
                                  value]))
 
+    def print_fc_stats(self, zhost):
+        """
+        Returns:
+        zhost	qsan.sanos4.fcport.tx[portname]	123
+        zhost	qsan.sanos4.fcport.rx[portname]	123
+        ...
+        """
+        for port, params in self._qsan.fc_stats().items():
+            # get port name
+            n = self._qsan._get_FC_port_name_by_id(port)
+
+            for param, value in params.items():
+                print('\t'.join([zhost,
+                                 'qsan.sanos4.fcport.' + param + '[' + n + ']',
+                                 value]))
+
     def print_all_stats(self, zhost):
         """
         """
