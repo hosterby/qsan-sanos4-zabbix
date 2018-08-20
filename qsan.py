@@ -77,6 +77,8 @@ class QSAN():
         self._url_path_select_stats_FC = '/monitor_x.php?op=fcport_set_monitor'
         self._url_path_select_stats_FC_SANOS3 = '/monitor_x.php'
         self._url_path_FC_stats = '/monitor_x.php?cmd=monitor_fcport'
+        self._url_path_health = '/dashboard_x.php?query=system'
+        self._url_path_health_SANOS3 = '/index.php'
         self._SANOS_VERSION = 4
         self._username = username
         self._password = password
@@ -84,6 +86,7 @@ class QSAN():
         self._DISKs = {}
         self._FCs = {}
         self.connect()
+        self._sanos_version_detect()
         self.vd_discovery()
         self.disk_discovery()
         self.fc_discovery()
@@ -219,6 +222,52 @@ class QSAN():
         stats['write'] = str(int(float(stats['write']) * 1048576))
 
         return stats
+
+    def _sanos_version_detect(self):
+        """
+        Detecting SANOS Version
+        Sets self._SANOS_VERSION with int(major_version, ex.: 3). Default is 4
+        """
+        version_lookup = self._soup.find('div', id='logo_writing')
+        if version_lookup:
+            if 'SANOS 4.0' not in version_lookup.text:
+                self._SANOS_VERSION = 3
+        else:
+            self._SANOS_VERSION = 3
+
+    def is_storage_health_Good(self):
+        """
+        Method for getting storage health status
+        Returns: True if Good, False if storage is in Degraded state or None
+        if unable to check state
+        """
+        if self._SANOS_VERSION == 4:
+            self._connection(self._url + self._url_path_health,
+                             username=None,
+                             password=None,
+                             data=None)
+
+            for item in self._soup.response.data.find_all('system'):
+                if item.item.text == 'System Health':
+                    if item.value.text == "Good":
+                        return True
+                    else:
+                        return False
+
+        elif self._SANOS_VERSION == 3:
+            # SANOS3 Support
+            self._connection(self._url + self._url_path_health_SANOS3,
+                             username=None,
+                             password=None,
+                             data=None)
+
+            status_div = self._soup.find('div', id='status_led')
+            for el in status_div.find_all('input'):
+                if '-green.gif' not in el['src']:
+                    return False
+
+            if status_div:
+                return True
 
     def _get_VD_name_by_id(self, id):
         """
@@ -483,9 +532,8 @@ class QSAN():
                                 attrs[attr.name] = attr.text
 
                         # SANOS3 support
-                        if 'Port' in attrs.get('name'):
+                        if self._SANOS_VERSION == 3:
                             port_id = str(int(attrs.get('name')[5:6]) - 1)
-                            self._SANOS_VERSION = 3
                         else:
                             port_id = str(int(attrs.get('name')[2:3]) - 1)
 
