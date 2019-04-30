@@ -10,11 +10,13 @@ Supports:
    * Volumes
    * Disks
    * FC Ports
+   * Cache Pools
  * Automatic enabling of monitoring for unmonitored Volumes and Disks
  * Statistics:
    * Volumes: IOPS, Throughput (Read, Write)
    * Disks: Latency, Throughput
    * FC Ports: Throughput
+   * Cache Pools: Cache Size, Read Cache Hits
 
 ## Requirements
  * Zabbix-server version 2.0+

@@ -17,7 +17,10 @@ def argumentsparsing():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--method", required=True, type=str, dest="method",
-                        help="Available methods: discovery, stat:ctrl")
+                        help="Available methods: discovery:volume, " +
+                             "discovery:disk, discovery:fc, discovery:cp,\n" +
+                             "stats:volume, stats:storage, stats:disk, " +
+                             "stats:cp, stats:all")
     parser.add_argument("--host", dest="host", required=True, type=str,
                         help="QSAN IP-address or FQDN")
     parser.add_argument("--username", type=str, dest="username",
@@ -34,7 +37,7 @@ def argumentsparsing():
 
 class QSAN():
     """
-    Class for operationg with qsan
+    Class for operationing with qsan
     """
 
     # Common header for HTTP request
@@ -79,16 +82,20 @@ class QSAN():
         self._url_path_FC_stats = '/monitor_x.php?cmd=monitor_fcport'
         self._url_path_health = '/dashboard_x.php?query=system'
         self._url_path_health_SANOS3 = '/index.php'
+        self._url_path_CP = '/ssd_cache_pool_x.php?query=getSSDtableData'
+        self._url_path_CP_stats = '/ssd_cache_pool_x.php?query=get_statistics'
         self._SANOS_VERSION = 4
         self._username = username
         self._password = password
         self._VDs = {}
         self._DISKs = {}
+        self._CPs = {}
         self._FCs = {}
         self.connect()
         self._sanos_version_detect()
         self.vd_discovery()
         self.disk_discovery()
+        self.cache_pool_discovery()
         self.fc_discovery()
 
     def _bs4(self, r):
@@ -144,11 +151,11 @@ class QSAN():
                 raise RequestException('Something wrong with request')
 
             return r
-        except (RequestException or ConnectionError or ConnectTimeout or
-                SSLError or MissingSchema or RetryError or ProxyError or
-                InvalidHeader or ReadTimeout or UnrewindableBodyError or
-                ChunkedEncodingError or HTTPError or StreamConsumedError or
-                Timeout or TooManyRedirects or ContentDecodingError) as e:
+        except (RequestException, ConnectionError, ConnectTimeout,
+                SSLError, MissingSchema, RetryError, ProxyError,
+                InvalidHeader, ReadTimeout, UnrewindableBodyError,
+                ChunkedEncodingError, HTTPError, StreamConsumedError,
+                Timeout, TooManyRedirects, ContentDecodingError) as e:
 
             raise RequestException('Error making request: ' + str(e))
 
@@ -505,6 +512,143 @@ class QSAN():
 
         return disk
 
+    def cache_pool_discovery(self):
+        """
+        Getting Cache Pools (CPs) information from Storage
+        Fills self._CPs with:
+        {'Name': {'rg_id': '', 'rg_name': '', 'ssd_name': '', ... },
+         'Name': {'rg_id': '', 'rg_name': '', 'ssd_name': '', ... }, ... }
+        """
+        if self._SANOS_VERSION == 3:
+            # Have no information about Cache Pools support in SANOS3
+            return {}
+
+        CPs = {}
+
+        self._connection(self._url + self._url_path_CP,
+                         username=None,
+                         password=None,
+                         data=None)
+
+        # Iteration over Cache Pools
+        for cp in self._soup.response.find_all('ssdpoollist'):
+            if cp:
+                attrs = {}
+                for attr in cp:
+                    if attr.name:
+                        attrs[attr.name] = attr.text
+
+                c = {cp.find('ssd_name').text.replace(' ', '-'): attrs}
+                CPs.update(c)
+
+        self._CPs = CPs
+
+    def cp_stats(self):
+        """
+        Getting Cache Pool stats (separate stats for each
+        ssd-enabled vd in pool)
+        Returns: {'id': {'rg_id': '', 'name': '',
+                         'rg_name': '', ..., 'stats': {'vd': {'p1': '',
+                                                              'p2': '',
+                                                              'pn': '', ... }},
+                                                      {'vd': {'p1': '',
+                                                              'p2': '',
+                                                              'pn': '', ... }}
+                                                       ... }}
+        """
+        if self._SANOS_VERSION == 3:
+            # Have no information about Cache Pools support in SANOS3
+            return {}
+
+        Pools = {}
+        Volume_Groups = {}
+
+        self._connection(self._url + self._url_path_CP_stats,
+                         username=None,
+                         password=None,
+                         data=None)
+
+        # Pools
+        for p in self._soup.response.find_all('pool_data'):
+            if p.name:
+                pool_id = p.find('rg_id').text
+
+                attrs = {}
+                for attr in p:
+                    if attr.name:
+                        attrs[attr.name] = attr.text
+
+                pool = {pool_id: attrs}
+                Pools.update(pool)
+
+        # Volume Groups
+        for vg in self._soup.response.find_all('vol_data'):
+            if vg.name:
+                vol_id = vg.find('vd').text
+
+                attrs = {}
+                for attr in vg:
+                    if attr.name:
+                        attrs[attr.name] = attr.text
+
+                volume_group = {vol_id: attrs}
+                Volume_Groups.update(volume_group)
+
+        # Adding VG Volumes stats to Pools
+        for pool, pool_params in Pools.items():
+            # Can't check but in order with
+            # https://www.qsan.com/en/software.php?no=A90B71B5
+            # it may be more than one volume (vd) in Raid Group/Volume
+            # group served by Pool
+            pool_params['stats'] = {}
+
+            for v, volume_params in Volume_Groups.items():
+                if volume_params['rg'] == pool_params['rg_id']:
+                    pool_params['stats'].update({v: volume_params})
+
+        return Pools
+
+    def cp_stats_summarize(self):
+        """
+        Getting some of Cache Pool stats in summary by Volumes as
+        one cache pool can serve more than one Volume in Raid/Volume group
+        Returns: {'cachepoolname': {'log_rd_hit': '',
+                                    'log_rd_tot': '',
+                                    'size_alloc': '',
+                                    'size_cached': '',
+                                    'size_dirty': '',
+                                    'ratio': ''}}
+        """
+        cp_stats = self.cp_stats()
+        stats = {}
+
+        for cp_params in cp_stats.values():
+            size_alloc = 0   # Total cache size
+            size_cached = 0  # Bytes cached
+            size_dirty = 0   # Bytes dirty
+            log_rd_hit = 0   # Cache hits
+            log_rd_tot = 0   # Total hits
+            for cp_vol_params in cp_params['stats'].values():
+                size_alloc = int(cp_vol_params['size_alloc']) * 1024 * 1024
+                size_cached += int(cp_vol_params['size_cached']) * 1024 * 1024
+                size_dirty += int(cp_vol_params['size_dirty']) * 1024 * 1024
+                log_rd_hit += int(cp_vol_params['log_rd_hit'])
+                log_rd_tot += int(cp_vol_params['log_rd_tot'])
+
+            ratio = round(log_rd_hit / (log_rd_tot / 100))
+            vol = {cp_params['name']: {
+                'size_alloc':   str(size_alloc),
+                'size_cached':  str(size_cached),
+                'size_dirty':   str(size_dirty),
+                'log_rd_hit':   str(log_rd_hit),
+                'log_rd_tot':   str(log_rd_tot),
+                'ratio':        str(ratio)
+            }}
+
+            stats.update(vol)
+
+        return stats
+
     def fc_discovery(self):
         """
         Getting FC Ports information from Storage
@@ -654,7 +798,7 @@ class QSAN():
 
 class Zabbix():
     """
-    Class for operationg with zabbix
+    Class for operationing with zabbix
     """
     _DATA = {'data': []}
 
@@ -680,7 +824,7 @@ class Zabbix():
         Returns:
         {"data": [{"{#VOLUME}": "volname"}, ... ]}
         """
-        for volume, params in self._qsan._VDs.items():
+        for volume in self._qsan._VDs:
             element = {'{#VOLUME}': self._qsan._get_VD_name_by_id(volume)}
             self._DATA['data'].append(element)
 
@@ -691,8 +835,19 @@ class Zabbix():
         Returns:
         {"data": [{"{#DISK}": "diskname"}, ... ]}
         """
-        for disk, params in self._qsan._DISKs.items():
+        for disk in self._qsan._DISKs:
             element = {'{#DISK}': self._qsan._get_DISK_name_by_id(disk)}
+            self._DATA['data'].append(element)
+
+        print(json.dumps(self._DATA, indent=2))
+
+    def print_cp_discovery(self):
+        """
+        Returns:
+        {"data": [{"{#CACHEPOOL}": "cpname"}, ... ]}
+        """
+        for cp in self._qsan._CPs:
+            element = {'{#CACHEPOOL}': cp}
             self._DATA['data'].append(element)
 
         print(json.dumps(self._DATA, indent=2))
@@ -702,7 +857,7 @@ class Zabbix():
         Returns:
         {"data": [{"{#FCPORT}": "portname"}, ... ]}
         """
-        for port, params in self._qsan._FCs.items():
+        for port in self._qsan._FCs:
             element = {'{#FCPORT}': self._qsan._get_FC_port_name_by_id(port)}
             self._DATA['data'].append(element)
 
@@ -741,6 +896,24 @@ class Zabbix():
                                  'qsan.sanos4.disk.' + param + '[' + n + ']',
                                  value]))
 
+    def print_cp_stats(self, zhost):
+        """
+        Returns:
+        zhost	qsan.sanos4.cachepool.size_alloc[cpname]	123
+        zhost	qsan.sanos4.cachepool.size_cached[cpname]	123
+        zhost	qsan.sanos4.cachepool.size_dirty[cpname]    123
+        zhost	qsan.sanos4.cachepool.log_rd_hit[cpname]    123
+        zhost	qsan.sanos4.cachepool.log_rd_tot[cpname]	123
+        zhost	qsan.sanos4.cachepool.ratio[cpname]	        123
+        """
+
+        for cp, cp_params in self._qsan.cp_stats_summarize().items():
+            for cp_param, cp_param_value in cp_params.items():
+                print('\t'.join([zhost,
+                                 'qsan.sanos4.cachepool.' + cp_param +
+                                 '[' + cp + ']',
+                                 cp_param_value]))
+
     def print_fc_stats(self, zhost):
         """
         Returns:
@@ -764,6 +937,7 @@ class Zabbix():
         self.print_storage_stats(zhost)
         self.print_disk_stats(zhost)
         self.print_fc_stats(zhost)
+        self.print_cp_stats(zhost)
 
 
 def main():
@@ -781,9 +955,11 @@ def main():
         'discovery:volume': lambda: zabbix.print_vd_discovery(),
         'discovery:disk': lambda: zabbix.print_disk_discovery(),
         'discovery:fc': lambda: zabbix.print_fc_discovery(),
+        'discovery:cp': lambda: zabbix.print_cp_discovery(),
         'stats:volume': lambda: zabbix.print_vd_stats(args.zhost),
         'stats:storage': lambda: zabbix.print_storage_stats(args.zhost),
         'stats:disk': lambda: zabbix.print_disk_stats(args.zhost),
+        'stats:cp': lambda: zabbix.print_cp_stats(args.zhost),
         'stats:all': lambda: zabbix.print_all_stats(args.zhost)
     }
 
